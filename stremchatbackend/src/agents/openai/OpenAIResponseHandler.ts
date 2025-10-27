@@ -31,6 +31,7 @@ export class OpenAIResponseHandler {
     this.onDispose();
   };
 
+  //handle the stop of the generation
   private handleStopGenerating = async (event: Event) => {
     if (this.is_done || event.message_id !== this.message.id) {
       return;
@@ -45,11 +46,23 @@ export class OpenAIResponseHandler {
       await this.openai.beta.threads.runs.cancel(this.run_id, {
         thread_id: this.openAiThread.id,
       });
-    } catch (error) {}
+    } catch (error) {
+        console.log("error cancelling runn", error)
+    }
+
+    await this.channel.sendEvent({
+        type: "ai_indicator.clear",
+        cid: this.message.cid, 
+        message_id: this.message.id
+    }), 
+
+    await this.dispose()
   };
 
   private handleStreamEvent = async (event: Event) => {};
 
+  
+  // handle the errors 
   private handleError = async (error: Error) => {
     if (this.is_done) {
       return;
