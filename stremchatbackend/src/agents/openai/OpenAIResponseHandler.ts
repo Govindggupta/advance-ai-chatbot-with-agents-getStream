@@ -1,3 +1,4 @@
+import { text } from "express";
 import OpenAI from "openai";
 import type { AssistantStream } from "openai/lib/AssistantStream";
 import type { Channel, Event, MessageResponse, StreamChat } from "stream-chat";
@@ -20,6 +21,7 @@ export class OpenAIResponseHandler {
   ) {
     this.chatClient.on("ai_indicator.stop", this.handleStopGenerating);
   }
+
   run = async () => {};
 
   dispose = async () => {
@@ -59,7 +61,52 @@ export class OpenAIResponseHandler {
     await this.dispose()
   };
 
-  private handleStreamEvent = async (event: Event) => {};
+  private handleStreamEvent = async (event: OpenAI.Beta.Assistants.AssistantStreamEvent) => {
+    const {cid , id} = this.message
+    
+    if(event.event == "thread.run.created"){
+      this.run_id = event.data.id
+    } 
+    else if (event.event === "thread.message.delta") {
+      const textdelta = event.data.delta.content?.[0]
+      if(textdelta?.type === "text" && textdelta.text){
+        this.message.text += textdelta.text.value || ""
+        const now = Date.now()
+        if (now - this.last_update_time > 1000) {
+          this.chatClient.partialUpdateMessage(id, {
+            set: {text : this.message_text}
+          })
+          this.last_update_time = now 
+        }
+        this.chunk_counter += 1 
+      }
+    }
+    else if (event.event === "thread.message.completed") {
+      this.chatClient.partialUpdateMessage(id, {
+        set: {
+          text: 
+            event.data.content[0].type === "text"
+            ? event.data.content[0].text.value 
+            : this.message_text
+        }
+      });
+      this.channel.sendEvent({
+        type: "ai_indicator.clear", 
+        cid: cid, 
+        message_id: id
+      })
+    }
+    else if (event.event === "thread.run.step.created") {
+      if (event.data.step_details.type === "message_creation") {
+        this.channel.sendEvent({
+          type: "ai_indicator.update", 
+          ai_state:"AI_STATE_GENERATING", 
+          cid: cid, 
+          message_id: id
+        })
+      }
+    }
+  };
 
   
   // handle the errors 
